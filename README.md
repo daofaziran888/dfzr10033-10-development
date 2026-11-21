@@ -71,7 +71,39 @@ npm run dev
 | 湖仓读取 | `data_lake_read` | 湖仓路径 | 路径编号、存储位置、文件格式 |
 | 结果缓存 | `result_cache` | 缓存条目 | 条目编号、查询摘要、结果哈希 |
 | 数据契约 | `data_contract` | 契约定义 | 契约编号、数据集、Schema约束 |
+| 集市发布批次 | `mart_release_batch` | 发布批次 | 批次编号、集市编号、字段定义、发布状态 |
+| 集市回滚记录 | `mart_release_rollback` | 回滚记录 | 回滚编号、原发布批次、恢复批次、变更回执 |
+| 集市领取文件 | `mart_release_claim` | 领取文件 | 领取编号、批次编号、确认版本 |
+| 契约历史明细 | `data_contract_history` | 契约历史 | 历史编号、变更类型、变更前后 Schema |
 | 实验配置 | `ab_config` | AB实验 | 实验编号、实验名称、分流比例 |
+
+## 集市发布回滚
+
+结果集市原先只有刷新型动作，没有批次级回滚能力。现在发布以批次为单位：
+
+- 发布批次只允许携带一套字段；确认中的批次若出现重复字段，或同一集市并行两套
+  确认字段，直接拒绝。发布生效是原子的，字段校验、快照校验、契约版本校验全部通过
+  才切换生效批，失败不会留下混用两批的快照。
+- 回滚记录按下架 → 校验 → 恢复推进：先摘除当前批的查询准入，再核对恢复批字段与
+  契约当前字段；如果契约侧刚通过校验准备推广的版本与恢复批冲突，记录停在「校验」，
+  该组合不承接新查询，确认后才恢复。回滚结果交代当前生效批与契约。
+- 数据契约接口读取回滚记录，按恢复批重算有效列约束，并回写契约历史明细；变更回执
+  可串起原始发布批次与回滚批次。
+- 领取文件在领取时冻结「确认版本」，回滚不改写它。回滚后历史领取按原确认版本对账，
+  新查询按恢复后的生效批读取，两种口径分别可查。
+
+相关接口：
+
+```text
+GET  /api/mart-release/{集市}/effective              当前生效批、契约与准入结论
+GET  /api/mart-release/{集市}/admission              生效批 + 契约组合能否承接新查询
+POST /api/mart-release/{集市}/rollback?accept_conflict=false
+POST /api/mart-release/rollbacks/{回滚}/verify|restore
+GET  /api/mart-release/claims/{领取}/reconcile       历史领取与新查询分别读到的定义
+POST /api/mart-release/contracts/{id}/rebuild-constraints
+GET  /api/mart-release/receipts/{回执}               原始发布批次与回滚批次追溯
+POST /api/pipelines/mart-release-rollback            回滚 + 契约重算管道
+```
 
 ## 约定
 

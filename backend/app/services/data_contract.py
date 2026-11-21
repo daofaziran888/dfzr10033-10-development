@@ -6,6 +6,13 @@ import uuid
 from typing import Any
 
 from app.services.base import BaseModuleService
+from app.services.mart_release_common import (
+    column_key,
+    find_batch,
+    normalize_columns,
+    rollback_rows_for_contract,
+    write_contract_history,
+)
 from app.store import store
 
 
@@ -145,3 +152,93 @@ class DataContractService(BaseModuleService):
             "old_schema": old_schema,
             "new_schema": new_schema,
         }
+
+    def rebuild_effective_constraints(self, contract_id: int) -> dict[str, Any]:
+        """读取集市发布回滚记录，按恢复批重算有效列约束并回写契约历史。
+
+        只有已走到「恢复」的回滚才改写生效定义；停在「校验 / 校验失败」的回滚
+        记录只作为待处理线索返回，不会把半成品字段写进契约。
+        """
+        contract = store.find(self.MODULE, contract_id)
+        if contract is None:
+            return {"ok": False, "message": "数据契约不存在"}
+
+        rollbacks = rollback_rows_for_contract(contract)
+        restored = [row for row in rollbacks if row.get("回滚状态") == "恢复"]
+        pending = [row for row in rollbacks if row.get("回滚状态") in {"下架", "校验", "校验失败"}]
+
+        if not restored:
+            return {
+                "ok": True,
+                "contract_id": contract_id,
+                "applied": False,
+                "schema": contract.get("Schema约束", ""),
+                "message": "没有已完成的集市回滚记录，维持当前列约束",
+                "pending_rollbacks": [_rollback_brief(row) for row in pending],
+                "history": self.list_history(contract_id)["items"],
+            }
+
+        latest = max(restored, key=lambda row: int(row.get("id", 0)))
+        restore_batch = find_batch(latest.get("恢复批次"))
+        columns = normalize_columns(
+            restore_batch.get("字段定义") if restore_batch else latest.get("恢复后字段")
+        )
+        if not columns:
+            return {"ok": False, "message": "回滚记录的恢复批次没有可用字段，无法重算列约束"}
+
+        before_schema = str(contract.get("Schema约束", ""))
+        changed = column_key(before_schema) != column_key(columns)
+        contract["Schema约束"] = ",".join(columns)
+        contract["pending"] = False
+        contract["abnormal"] = False
+        if str(contract.get("status")) in {"已违约", "草稿"}:
+            contract["status"] = "已承诺"
+        contract["当前生效批次"] = latest.get("恢复批次", "")
+
+        history = write_contract_history(
+            contract,
+            change_type="契约接口重算有效列约束",
+            before_schema=before_schema,
+            after_schema=",".join(columns),
+            batch_no=str(latest.get("恢复批次", "")),
+            rollback_no=str(latest.get("回滚编号", "")),
+            receipt_no=str(latest.get("变更回执", "")),
+            effective=True,
+            note="数据契约接口读取回滚记录后重算恢复批的有效列约束",
+            rollback_id=int(latest.get("id", 0)),
+        )
+        return {
+            "ok": True,
+            "contract_id": contract_id,
+            "applied": True,
+            "changed": changed,
+            "schema": contract.get("Schema约束", ""),
+            "restored_batch": latest.get("恢复批次", ""),
+            "rollback_no": latest.get("回滚编号", ""),
+            "receipt": latest.get("变更回执", ""),
+            "history": history,
+            "pending_rollbacks": [_rollback_brief(row) for row in pending],
+        }
+
+    def list_history(self, contract_id: int) -> dict[str, Any]:
+        contract = store.find(self.MODULE, contract_id)
+        if contract is None:
+            return {"items": [], "total": 0}
+        rows = [
+            row for row in store.rows("data_contract_history")
+            if int(row.get("_contract_id") or 0) == contract_id
+            or str(row.get("契约编号", "")) == str(contract.get("契约编号", ""))
+        ]
+        rows.sort(key=lambda row: int(row.get("id", 0)))
+        return {"items": rows, "total": len(rows)}
+
+
+def _rollback_brief(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "回滚编号": row.get("回滚编号", ""),
+        "回滚状态": row.get("回滚状态", ""),
+        "原发布批次": row.get("原发布批次", ""),
+        "恢复批次": row.get("恢复批次", ""),
+        "字段冲突": row.get("字段冲突", ""),
+        "变更回执": row.get("变更回执", ""),
+    }

@@ -23,6 +23,11 @@ def require_service(module: str):
     return service
 
 
+def public_row(row: dict[str, Any]) -> dict[str, Any]:
+    """隐藏服务内部使用的下划线字段，接口只暴露业务字段。"""
+    return {key: value for key, value in row.items() if not key.startswith("_")}
+
+
 # -- CRUD --
 
 @router.get("/{module}", response_model=PageResult[dict])
@@ -35,7 +40,7 @@ def list_entries(
     filters = {k: v.strip() for k, v in request.query_params.items()
                if k in service.LIST_FIELDS and v.strip()}
     items, total = service.list_entries(filters=filters, keyword=keyword, status=status, page=page, size=size)
-    return PageResult(items=items, total=total, page=page, size=size)
+    return PageResult(items=[public_row(item) for item in items], total=total, page=page, size=size)
 
 
 @router.get("/{module}/export")
@@ -64,7 +69,7 @@ def get_entry(module: str, entry_id: int) -> dict[str, Any]:
     entry = service.get_entry(entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail=f"{service.ENTITY} {entry_id} 不存在或已归档")
-    return entry
+    return public_row(entry)
 
 
 @router.post("/{module}", response_model=ActionResult)
@@ -72,15 +77,19 @@ def create_entry(module: str, payload: EntryPayload) -> ActionResult:
     service = require_service(module)
     entry, missing = service.create_entry(payload.values)
     if missing:
-        return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
-    return ActionResult(ok=True, message=f"{service.ENTITY}已登记", entry=entry)
+        # 领域服务可能返回“缺少必填字段”，也可能返回更具体的校验原因（带括号说明）。
+        if all("(" not in item and "（" not in item for item in missing):
+            return ActionResult(ok=False, message=f"缺少必填字段：{'、'.join(missing)}")
+        return ActionResult(ok=False, message="；".join(missing))
+    return ActionResult(ok=True, message=f"{service.ENTITY}已登记", entry=public_row(entry))
 
 
 @router.post("/{module}/{entry_id}/actions", response_model=ActionResult)
 def run_action(module: str, entry_id: int, payload: ActionPayload) -> ActionResult:
     service = require_service(module)
     entry, message = service.run_action(entry_id, payload.action.strip())
-    return ActionResult(ok=entry is not None, message=message, entry=entry)
+    return ActionResult(ok=entry is not None, message=message,
+                        entry=public_row(entry) if entry is not None else None)
 
 
 # -- 8 条跨模块管道 API --
@@ -221,3 +230,33 @@ def pipeline_cost_aggregate_alert() -> dict[str, Any]:
             "cost_aggregation": cost_svc.aggregate_module_costs(),
             "quota_check": cost_svc.check_monthly_quota(),
             "cache_report": result_cache_svc.cache_hit_rate_report()}
+
+
+@router.post("/pipelines/mart-release-rollback")
+def pipeline_mart_release_rollback(
+    mart_ref: str = Query(...), batch_ref: str = Query(default=""),
+    accept_conflict: bool = Query(default=False),
+) -> dict[str, Any]:
+    """集市发布回滚：下架→校验→恢复，随后由契约接口重算并回写列约束。"""
+    from app.services.mart_release_batch import MartReleaseBatchService
+    from app.services.mart_release_rollback import MartReleaseRollbackService
+
+    rollback_svc = MartReleaseRollbackService()
+    rollback = rollback_svc.rollback_to_previous(
+        mart_ref=mart_ref, batch_ref=batch_ref or None,
+        reason="管道触发批次级回滚", operator="pipeline_engine",
+        accept_conflict=accept_conflict,
+    )
+    record = rollback.get("rollback") or {}
+    rebuilt = None
+    if rollback.get("ok") and record.get("_contract_id"):
+        rebuilt = contract_svc.rebuild_effective_constraints(int(record["_contract_id"]))
+    return {
+        "ok": bool(rollback.get("ok")),
+        "pipeline": "mart_release_rollback",
+        "rollback": record,
+        "needs_confirmation": bool(rollback.get("needs_confirmation")),
+        "admission": MartReleaseBatchService().admit_query(mart_ref),
+        "contract_rebuild": rebuilt,
+        "effective": rollback_svc.effective_view(mart_ref),
+    }

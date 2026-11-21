@@ -17,7 +17,7 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
     "time_window": [_seed(1, {"窗口编号":"TIME-0001","窗口类型":"滑动","滑动宽度":"3600","滑动步长":"600","对齐基准":"epoch","缺值策略":"fill_prev","窗口别名":"1h_window","最后计算":"-"})],
     "dataset_slice": [_seed(1, {"切片编号":"DATA-0001","源立方":"1","维度过筛":"region=CN","度量过滤":"revenue>0","切片标签":"active","行数统计":"500","创建人":"admin","最后刷新":"-"})],
     "drill_config": [_seed(1, {"路径编号":"DRIL-0001","起始维度":"region","目标维度":"city","下钻类型":"hierarchy","关联键":"region_id","跳转规则":"exact","展示模板":"table","最后使用":"-"})],
-    "result_mart": [_seed(1, {"集市编号":"RESU-0001","集市名称":"结果集市样例","数据来源":"result_cache","主题域":"analytics","行数统计":"0","刷新周期":"manual","下游消费":"dashboard","最后刷新":"-"})],
+    "result_mart": [_seed(1, {"集市编号":"RESU-0001","集市名称":"结果集市样例","数据来源":"result_cache","主题域":"analytics","行数统计":"1200","刷新周期":"manual","下游消费":"dashboard","最后刷新":"2026-11-18 09:00:00","契约编号":"DATA-0001","当前批次":"RESU-B0002","当前字段":"id,customer_name,amount","可承接查询":"True","status":"可用","pending":False})],
     "benchmark_set": [_seed(1, {"基线编号":"BENC-0001","基线名称":"基准集样例","数据范围":"2026-09","基线时段":"2026-09-01","对比维度":"region","指标数值":"1000","方差阈值":"0.1","锁定状态":"unlocked"})],
     "query_audit": [_seed(1, {"记录编号":"QUER-0001","查询语句":"SELECT * FROM demo","执行耗时":"100ms","扫描行数":"1000","返回行数":"10","数据来源":"query_federation","操作用户":"admin","查询时间":"2026-11-01"})],
     "cost_govern": [_seed(1, {"策略编号":"COST-0001","适用角色":"analyst","查询上限":"10000","并发上限":"10","月度配额":"100000","告警阈值":"80","限流动作":"monitor","生效时段":"2026-11"})],
@@ -26,6 +26,18 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
     "schedule_job": [_seed(1, {"任务编号":"SCHE-0001","目标立方":"1","Cron表达式":"0 */1 * * *","时区设置":"Asia/Shanghai","依赖检查":"none","超时上限":"600","失败通知":"email","下次执行":"-"})],
     "data_lake_read": [_seed(1, {"路径编号":"DATA-0001","存储位置":"s3://data-lake/prod","文件格式":"parquet","分区模式":"dt","Schema推导":"","文件列表":"","最后扫描":"","数据量":""})],
     "result_cache": [_seed(1, {"条目编号":"RESU-0001","查询摘要":"sample query","结果哈希":"abc123","缓存命中":"5","过期时间":"2027-01-01","存储大小":"100","创建时间":"2026-11-01","最后命中":"2026-11-01"})],
-    "data_contract": [_seed(1, {"契约编号":"DATA-0001","数据集":"analytics","Schema约束":"id,name,value","SLA定义":"每小时更新","更新频率":"3600","负责人":"admin","消费者":"dashboard","生效时间":"2026-11-01"})],
+    "data_contract": [_seed(1, {"契约编号":"DATA-0001","数据集":"RESU-0001/analytics","Schema约束":"id,customer_name,amount","SLA定义":"每小时更新","更新频率":"3600","负责人":"admin","消费者":"dashboard","生效时间":"2026-11-01","待推广字段":"","挂起字段版本":"","当前生效批次":"RESU-B0002","status":"已承诺","pending":False})],
+    "mart_release_batch": [
+        _seed(1, {"批次编号":"RESU-B0001","集市编号":"RESU-0001","发布版本":"v1.0","字段定义":"id,name,amount","数据快照":"RESU-B0001@b1snap","契约编号":"DATA-0001","领取文件数":"1","发布状态":"已下架","发布时间":"2026-11-10 10:00:00","发布序号":"1","字段指纹":"b1snap","是否当前生效":"False","可承接查询":"False","_snapshot_columns":["id","name","amount"],"status":"已下架","pending":False}),
+        _seed(2, {"批次编号":"RESU-B0002","集市编号":"RESU-0001","发布版本":"v2.0","字段定义":"id,customer_name,amount","数据快照":"RESU-B0002@b2snap","契约编号":"DATA-0001","领取文件数":"1","发布状态":"已发布","发布时间":"2026-11-18 09:00:00","发布序号":"2","字段指纹":"b2snap","是否当前生效":"True","可承接查询":"True","_snapshot_columns":["id","customer_name","amount"],"status":"已发布","pending":False}),
+    ],
+    "mart_release_rollback": [],
+    "mart_release_claim": [
+        _seed(1, {"领取编号":"CLAIM-0001","集市编号":"RESU-0001","批次编号":"RESU-B0001","文件名称":"resu_b0001_20261110.csv","确认版本":"id,name,amount","字段快照":"id,name,amount","领取人":"bi_team","领取时间":"2026-11-10 11:30:00","领取状态":"已领取","status":"已领取","pending":False}),
+        _seed(2, {"领取编号":"CLAIM-0002","集市编号":"RESU-0001","批次编号":"RESU-B0002","文件名称":"resu_b0002_20261118.csv","确认版本":"id,customer_name,amount","字段快照":"id,customer_name,amount","领取人":"dashboard","领取时间":"2026-11-18 09:30:00","领取状态":"已领取","status":"已领取","pending":False}),
+    ],
+    "data_contract_history": [
+        _seed(1, {"历史编号":"MCHS-0001","契约编号":"DATA-0001","数据集":"RESU-0001/analytics","变更类型":"批次发布生效","变更前Schema":"id,name,amount","变更后Schema":"id,customer_name,amount","关联批次":"RESU-B0002","关联回滚":"","变更回执":"RCPT-PUB-B2RENAME","生效状态":"已生效","变更说明":"批次RESU-B0002发布生效，name 改名为 customer_name","变更时间":"2026-11-18 09:00:00","status":"已生效","pending":False,"abnormal":False,"_contract_id":1,"_rollback_id":0}),
+    ],
     "ab_config": [_seed(1, {"实验编号":"AB_C-0001","实验名称":"实验配置样例","分流比例":"50:50","指标集合":"revenue","对照组":"baseline","实验组":"variant","置信水平":"0.95","运行期间":"2026-11"})],
 }

@@ -23,6 +23,10 @@ from app.services.schedule_job import ScheduleJobService
 from app.services.data_lake_read import DataLakeReadService
 from app.services.result_cache import ResultCacheService
 from app.services.data_contract import DataContractService
+from app.services.data_contract_history import DataContractHistoryService
+from app.services.mart_release_batch import MartReleaseBatchService
+from app.services.mart_release_claim import MartReleaseClaimService
+from app.services.mart_release_rollback import MartReleaseRollbackService
 from app.services.ab_config import AbConfigService
 
 SERVICES: dict[str, BaseModuleService] = {
@@ -47,6 +51,10 @@ SERVICES: dict[str, BaseModuleService] = {
     "data_lake_read": DataLakeReadService(),
     "result_cache": ResultCacheService(),
     "data_contract": DataContractService(),
+    "data_contract_history": DataContractHistoryService(),
+    "mart_release_batch": MartReleaseBatchService(),
+    "mart_release_rollback": MartReleaseRollbackService(),
+    "mart_release_claim": MartReleaseClaimService(),
     "ab_config": AbConfigService(),
 }
 

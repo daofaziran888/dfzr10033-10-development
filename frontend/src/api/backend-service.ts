@@ -54,6 +54,50 @@ export async function downloadEntries(
   URL.revokeObjectURL(url)
 }
 
+export type EffectiveView = {
+  ok: boolean
+  集市编号: string
+  当前生效批次: string
+  当前生效契约: string
+  当前字段: string
+  契约字段: string
+  可承接查询: boolean
+  核验问题: string[]
+  最近回滚?: { 回滚编号: string; 回滚状态: string; 变更回执: string } | null
+}
+
+export async function loadEffective(martRef: string): Promise<EffectiveView> {
+  const response = await request(`/api/mart-release/${encodeURIComponent(martRef)}/effective`)
+  if (!response.ok) throw new Error('生效批与契约读取失败')
+  return await response.json()
+}
+
+export async function rollbackToPrevious(
+  martRef: string,
+  options: { batch?: string; acceptConflict?: boolean } = {},
+): Promise<{ ok: boolean; message: string; needs_confirmation?: boolean; rollback?: EntryRow }> {
+  const query = new URLSearchParams()
+  if (options.batch) query.set('batch', options.batch)
+  if (options.acceptConflict) query.set('accept_conflict', 'true')
+  const response = await request(
+    `/api/mart-release/${encodeURIComponent(martRef)}/rollback?${query.toString()}`,
+    { method: 'POST' },
+  )
+  return await response.json()
+}
+
+export async function reconcileClaim(claimRef: string): Promise<Record<string, unknown>> {
+  const response = await request(`/api/mart-release/claims/${encodeURIComponent(claimRef)}/reconcile`)
+  if (!response.ok) throw new Error('领取文件对账失败')
+  return await response.json()
+}
+
+export async function traceReceipt(receiptNo: string): Promise<Record<string, unknown>> {
+  const response = await request(`/api/mart-release/receipts/${encodeURIComponent(receiptNo)}`)
+  if (!response.ok) throw new Error('变更回执追溯失败')
+  return await response.json()
+}
+
 export async function loadOverview(): Promise<OverviewResult> {
   const response = await request('/api/overview')
   if (!response.ok) throw new Error('运营概览读取失败')
